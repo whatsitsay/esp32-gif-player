@@ -1,0 +1,8 @@
+{
+    "sketch": "esp32-gif-player.ino",
+    "configuration": "FlashFreq=80,UploadSpeed=921600,DebugLevel=info,EraseFlash=none",
+    "board": "esp32:esp32:esp32doit-devkit-v1",
+    "programmer": "esptool",
+    "port": "COM3",
+    "output": "./build"
+}
