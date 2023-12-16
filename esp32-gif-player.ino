@@ -8,6 +8,7 @@
  * 
  */
 #include <string.h>
+#include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
 #include <FS.h>
@@ -24,6 +25,12 @@
 #define SD_MISO   (TFT_MISO)
 #define SD_CS     (4)
 
+#define LCD_WIDTH  (320)
+#define LCD_HEIGHT (240)
+#define LCD_SIZE_B (LCD_WIDTH * LCD_HEIGHT * 2)
+
+#define ERROR_WAIT for(;;)
+
 // TFT module
 TFT_eSPI tft = TFT_eSPI();
 // SD SPI module
@@ -31,8 +38,12 @@ SPIClass sd_spi = SPIClass(VSPI);
 // Gif decoder template. Hard code dimensions for now
 // TODO: lzwMaxBits not defined, just part of constructor...
 // is it meant to be the bitwidth of colors?
-GifDecoder<320, 240, 12, true> decoder;
-static unsigned update_screen_call = 0;
+GifDecoder<LCD_WIDTH, LCD_HEIGHT, 16> decoder;
+// Frame buffer
+#define NUM_FRAME_BUFFS (2)
+#define BUFF_HEIGHT (LCD_HEIGHT / NUM_FRAME_BUFFS)
+#define BUFF_SIZE_B (LCD_WIDTH * BUFF_HEIGHT * 2)
+uint16_t* frame_buff[NUM_FRAME_BUFFS];
 
 // Gif path
 File gif_dir;
@@ -48,13 +59,18 @@ void screenClearCallback(void)
 
 void updateScreenCallback(void)
 {
-  // Do nothing but increment counter for now
-  update_screen_call++;
+  for (int i = 0; i < NUM_FRAME_BUFFS; i++) {
+    tft.pushImage(0, i * BUFF_HEIGHT, LCD_WIDTH, BUFF_HEIGHT, frame_buff[i]);
+  }
+  delay(5);
 }
 
 void drawPixelCallback(int16_t x, int16_t y, uint8_t red, uint8_t green, uint8_t blue)
 {
-  tft.drawPixel(x, y, tft.color565(red, green, blue));
+  // Set in frame buffer itself
+  int buff_idx = y / BUFF_HEIGHT;
+  int grid_idx = x + ((y % BUFF_HEIGHT) * LCD_WIDTH);
+  frame_buff[buff_idx][grid_idx] = tft.color565(red, green, blue);
 }
 
 //####################################################################################################
@@ -75,8 +91,21 @@ void setup() {
 
   decoder.setFileSizeCallback(fileSizeCallback);
 
+  // Initialize frame buffers
+  for (int i = 0; i < NUM_FRAME_BUFFS; i++)
+  {
+    frame_buff[i] = (uint16_t *)calloc(BUFF_HEIGHT * LCD_WIDTH, 2);
+    if (frame_buff[i] == NULL)
+    {
+      Serial.printf("Failed to allocate frame buffer %d\n", i);
+      ERROR_WAIT;
+    }
+
+  }
+
   // Setup TFT
   tft.init();
+  tft.setSwapBytes(true);
 
   // Enable backlight
   pinMode(TFT_BL, OUTPUT);
@@ -84,10 +113,10 @@ void setup() {
 
   // Enable and check SD card
   sd_spi.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  if (!SD.begin(SD_CS, sd_spi, 40000000))
+  if (!SD.begin(SD_CS, sd_spi, 80000000))
   {
     Serial.println("Card mount failed, check pins!");
-    return;
+    ERROR_WAIT;
   }
 
   // Print SD card stats
@@ -95,7 +124,7 @@ void setup() {
  
   if (cardType == CARD_NONE) {
     Serial.println("No SD card attached");
-    return;
+    ERROR_WAIT;
   }
  
   Serial.print("SD Card Type: ");
@@ -119,7 +148,7 @@ void setup() {
   Serial.println("Completed initialisation");
 
   // Rotate and set to black
-  tft.setRotation(1); // Double-check correct orientation
+  tft.setRotation(3); // Double-check correct orientation
   tft.fillScreen(ILI9341_BLACK);
 
   // Only playing single gif, so load that as well
@@ -127,7 +156,7 @@ void setup() {
   if (num_files <= 0) {
     Serial.printf("ERROR: No gif files present! Num files = %d", num_files);
     // Wait forever
-    while(1);
+    ERROR_WAIT;
   }
 
   // Open gif file
@@ -135,7 +164,7 @@ void setup() {
   {
     Serial.println("ERROR: Failed to open gif file!");
     // Wait forever
-    while(1);
+    ERROR_WAIT;
   }
 }
 //####################################################################################################
