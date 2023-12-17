@@ -38,12 +38,14 @@ SPIClass sd_spi = SPIClass(VSPI);
 // Gif decoder template. Hard code dimensions for now
 // TODO: lzwMaxBits not defined, just part of constructor...
 // is it meant to be the bitwidth of colors?
-GifDecoder<LCD_WIDTH, LCD_HEIGHT, 16> decoder;
+GifDecoder<LCD_WIDTH, LCD_HEIGHT, 16, true> decoder;
 // Frame buffer
 #define NUM_FRAME_BUFFS (2)
 #define BUFF_HEIGHT (LCD_HEIGHT / NUM_FRAME_BUFFS)
 #define BUFF_SIZE_B (LCD_WIDTH * BUFF_HEIGHT * 2)
 uint16_t* frame_buff[NUM_FRAME_BUFFS];
+
+static bool new_origin_set = false;
 
 // Gif path
 File gif_dir;
@@ -62,7 +64,7 @@ void updateScreenCallback(void)
   for (int i = 0; i < NUM_FRAME_BUFFS; i++) {
     tft.pushImage(0, i * BUFF_HEIGHT, LCD_WIDTH, BUFF_HEIGHT, frame_buff[i]);
   }
-  delay(5);
+  delay(10);
 }
 
 void drawPixelCallback(int16_t x, int16_t y, uint8_t red, uint8_t green, uint8_t blue)
@@ -174,11 +176,29 @@ void loop() {
 
   // Just keep decoding the same file
   if (decoder.startDecoding() >= 0) {
+    // If first run, set new TFT origin now that gif is loaded
+    if (!new_origin_set)
+    {
+      // Center based on gif size
+      // Only do so after GIF is properly grabbed
+      uint16_t gif_w, gif_h;
+      decoder.getSize(&gif_w, &gif_h);
+      if (gif_w <= LCD_WIDTH && gif_h <= LCD_HEIGHT)
+      {
+        Serial.printf("Current origin: (%d, %d)\n", tft.getOriginX(), tft.getOriginY());
+        Serial.printf("GIF dimensions: %d x %d\n", gif_w, gif_h);
+        tft.setOrigin((LCD_WIDTH - gif_w)/2, (LCD_HEIGHT - gif_h)/2);
+        Serial.printf("New origin: (%d, %d)\n", tft.getOriginX(), tft.getOriginY());
+        new_origin_set = true;
+      } 
+    }
+
     // Decode frame
     int result;
     do {
       result = decoder.decodeFrame(false);
     } while (result >= 0);
+
   }
   else {
     Serial.println("WARNING: Error decoding gif");
