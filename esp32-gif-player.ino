@@ -46,6 +46,10 @@ GifDecoder<LCD_WIDTH, LCD_HEIGHT, 16, true> decoder;
 uint16_t* frame_buff[NUM_FRAME_BUFFS];
 
 static bool new_origin_set = false;
+static uint16_t origin_x = 0;
+static uint16_t origin_y = 0;
+static uint16_t gif_w = LCD_WIDTH;
+static uint16_t gif_h = LCD_HEIGHT;
 
 // Gif path
 File gif_dir;
@@ -61,9 +65,31 @@ void screenClearCallback(void)
 
 void updateScreenCallback(void)
 {
-  for (int i = 0; i < NUM_FRAME_BUFFS; i++) {
-    tft.pushImage(0, i * BUFF_HEIGHT, LCD_WIDTH, BUFF_HEIGHT, frame_buff[i]);
+  // Deconstruction of TFT_eSPI::pushImage, but with multiple frame buffers
+  // Should allow for more contiguous transfer of pixel data
+  // Assumes gif is smaller than TFT size
+
+  tft.startWrite();
+  tft.setWindow(origin_x, origin_y, origin_x + gif_w - 1, origin_y + gif_h - 1);
+
+  int buff_idx = 0;
+  uint16_t* frame_buff_ptr = frame_buff[buff_idx];
+
+  // Push pixels
+  for (int y = origin_y; y < origin_y + gif_h; y++)
+  {
+    // Check if frame buffer needs to change based on height traveled
+    if ((y > 0) && (y % BUFF_HEIGHT == 0))
+    {
+      // Switch frame buffer
+      frame_buff_ptr = frame_buff[++buff_idx];
+    }
+
+    tft.pushPixels(frame_buff_ptr, gif_w);
+    frame_buff_ptr += LCD_WIDTH;
   }
+  tft.endWrite();
+
   delay(10);
 }
 
@@ -181,14 +207,15 @@ void loop() {
     {
       // Center based on gif size
       // Only do so after GIF is properly grabbed
-      uint16_t gif_w, gif_h;
       decoder.getSize(&gif_w, &gif_h);
       if (gif_w <= LCD_WIDTH && gif_h <= LCD_HEIGHT)
       {
         Serial.printf("Current origin: (%d, %d)\n", tft.getOriginX(), tft.getOriginY());
         Serial.printf("GIF dimensions: %d x %d\n", gif_w, gif_h);
         tft.setOrigin((LCD_WIDTH - gif_w)/2, (LCD_HEIGHT - gif_h)/2);
-        Serial.printf("New origin: (%d, %d)\n", tft.getOriginX(), tft.getOriginY());
+        origin_x = tft.getOriginX();
+        origin_y = tft.getOriginY();
+        Serial.printf("New origin: (%d, %d)\n", origin_x, origin_y);
         new_origin_set = true;
       } 
     }
