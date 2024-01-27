@@ -17,6 +17,11 @@
 #include <User_Config.h>
 #include <GifDecoder.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/timers.h"
+#include "freertos/event_groups.h"
+
 // Local filename functions
 #include "FilenameFunctions.h"
 
@@ -54,6 +59,16 @@ static uint16_t gif_h = LCD_HEIGHT;
 // Gif path
 File gif_dir;
 const char* gif_path = "/gif";
+
+// Motion detector params
+#define PIR_PIN     (0)
+#define SPEAKER_PIN (26)
+volatile byte output_state = LOW;
+//####################################################################################################
+// Motion detector interrupt
+//####################################################################################################
+
+
 //####################################################################################################
 // Callback functions
 //####################################################################################################
@@ -101,11 +116,22 @@ void drawPixelCallback(int16_t x, int16_t y, uint8_t red, uint8_t green, uint8_t
   frame_buff[buff_idx][grid_idx] = tft.color565(red, green, blue);
 }
 
+void motionDetectorCallback()
+{
+  // For now just toggle byte
+  output_state = !output_state;
+}
+
 //####################################################################################################
 // Setup
 //####################################################################################################
 void setup() {
   Serial.begin(115200);
+
+  // Setup PIR sensor and output
+  pinMode(SPEAKER_PIN, OUTPUT);
+  pinMode(PIR_PIN, INPUT_PULLDOWN);
+  attachInterrupt(digitalPinToInterrupt(PIR_PIN), motionDetectorCallback, RISING);
 
   // Set callbacks for Gif decoder
   decoder.setScreenClearCallback(screenClearCallback);
@@ -230,4 +256,6 @@ void loop() {
   else {
     Serial.println("WARNING: Error decoding gif");
   }
+
+  digitalWrite(SPEAKER_PIN, output_state);
 }
